@@ -1,6 +1,6 @@
 #![no_std]
 
-use soroban_sdk::{contract, contractimpl, contracttype, symbol_short, Address, Env, String, Vec};
+use soroban_sdk::{contract, contractimpl, contracttype, symbol_short, Address, BytesN, Env, String, Vec};
 
 #[contracttype]
 #[derive(Clone, Debug, PartialEq)]
@@ -394,6 +394,33 @@ impl AgenticPayContract {
             .get(&DataKey::ProjectCount)
             .unwrap_or(0)
     }
+
+    /// Upgrade the contract WASM code. Admin-only.
+    ///
+    /// Uses Soroban's built-in upgrade mechanism which replaces the contract
+    /// bytecode while preserving all persistent and instance storage. This
+    /// allows the contract to be upgraded without redeploying or migrating data.
+    ///
+    /// # Arguments
+    /// * `admin` - Must match the stored admin address
+    /// * `new_wasm_hash` - SHA-256 hash of the new WASM binary (uploaded via `soroban contract install`)
+    pub fn upgrade(env: Env, admin: Address, new_wasm_hash: BytesN<32>) {
+        admin.require_auth();
+
+        let stored_admin: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .expect("Not initialized");
+        assert!(admin == stored_admin, "Only admin can upgrade");
+
+        env.deployer().update_current_contract_wasm(new_wasm_hash);
+    }
+
+    /// Return the contract version for tracking upgrades.
+    pub fn version(_env: Env) -> u32 {
+        1
+    }
 }
 
 #[cfg(test)]
@@ -688,5 +715,33 @@ mod test {
 
         assert_eq!(id, 3);
         assert_eq!(client.get_project_count(), 3);
+    }
+
+    #[test]
+    fn test_version_returns_current() {
+        let env = Env::default();
+        let contract_id = env.register_contract(None, AgenticPayContract);
+        let client = AgenticPayContractClient::new(&env, &contract_id);
+
+        assert_eq!(client.version(), 1);
+    }
+
+    #[test]
+    #[should_panic(expected = "Only admin can upgrade")]
+    fn test_upgrade_rejects_non_admin() {
+        let env = Env::default();
+        env.mock_all_auths();
+
+        let contract_id = env.register_contract(None, AgenticPayContract);
+        let client = AgenticPayContractClient::new(&env, &contract_id);
+
+        let admin = Address::generate(&env);
+        let non_admin = Address::generate(&env);
+
+        client.initialize(&admin);
+
+        // Non-admin attempting upgrade should panic
+        let fake_hash = BytesN::from_array(&env, &[0u8; 32]);
+        client.upgrade(&non_admin, &fake_hash);
     }
 }
