@@ -34,6 +34,7 @@ pub enum DataKey {
     Project(u64),
     ProjectCount,
     Admin,
+    Metadata(String),
 }
 
 #[contract]
@@ -46,6 +47,13 @@ impl AgenticPayContract {
         admin.require_auth();
         env.storage().instance().set(&DataKey::Admin, &admin);
         env.storage().instance().set(&DataKey::ProjectCount, &0u64);
+    }
+
+    fn get_admin(env: &Env) -> Address {
+        env.storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .expect("Not initialized")
     }
 
     /// Create a new project with escrow
@@ -264,6 +272,41 @@ impl AgenticPayContract {
             .instance()
             .get(&DataKey::ProjectCount)
             .unwrap_or(0)
+    }
+
+    /// Store metadata key-value pair (admin only)
+    pub fn set_metadata(env: Env, admin: Address, key: String, value: String) {
+        admin.require_auth();
+        let stored_admin = Self::get_admin(&env);
+        assert!(admin == stored_admin, "Only admin can set metadata");
+
+        env.storage()
+            .persistent()
+            .set(&DataKey::Metadata(key.clone()), &value);
+
+        env.events().publish(
+            (symbol_short!("meta"), symbol_short!("set")),
+            (key, value),
+        );
+    }
+
+    /// Read metadata by key
+    pub fn get_metadata(env: Env, key: String) -> Option<String> {
+        env.storage().persistent().get(&DataKey::Metadata(key))
+    }
+
+    /// Remove metadata entry (admin only)
+    pub fn remove_metadata(env: Env, admin: Address, key: String) {
+        admin.require_auth();
+        let stored_admin = Self::get_admin(&env);
+        assert!(admin == stored_admin, "Only admin can remove metadata");
+
+        env.storage().persistent().remove(&DataKey::Metadata(key.clone()));
+
+        env.events().publish(
+            (symbol_short!("meta"), symbol_short!("del")),
+            key,
+        );
     }
 }
 
