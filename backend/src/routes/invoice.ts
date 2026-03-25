@@ -1,18 +1,15 @@
 import { Router } from 'express';
 import { generateInvoice } from '../services/invoice.js';
 import { idempotency } from '../middleware/idempotency.js';
+import { validate } from '../middleware/validate.js';
+import { invoiceSchema } from '../schemas/index.js';
 
 export const invoiceRouter = Router();
 
 // AI-powered invoice generation
-invoiceRouter.post('/generate', idempotency(), async (req, res) => {
+invoiceRouter.post('/generate', idempotency(), validate(invoiceSchema), async (req, res) => {
   try {
     const { projectId, workDescription, hoursWorked, hourlyRate } = req.body;
-
-    if (!projectId || !workDescription) {
-      res.status(400).json({ message: 'Missing required fields' });
-      return;
-    }
 
     const invoice = await generateInvoice({
       projectId,
