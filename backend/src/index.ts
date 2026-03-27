@@ -10,8 +10,11 @@ import { stellarRouter } from './routes/stellar.js';
 import { catalogRouter } from './routes/catalog.js';
 import { jobsRouter } from './routes/jobs.js';
 import { healthRouter } from './routes/health.js';
+import { queueRouter } from './routes/queue.js';
 import { startJobs, getJobScheduler } from './jobs/index.js';
 import { errorHandler, notFoundHandler, AppError } from './middleware/errorHandler.js';
+import { messageQueue } from './services/queue.js';
+import { registerDefaultProcessors } from './services/queue-producers.js';
 
 dotenv.config();
 
@@ -106,6 +109,7 @@ apiV1Router.use('/invoice', invoiceLimiter, invoiceRouter);
 apiV1Router.use('/stellar', stellarRouter);
 apiV1Router.use('/catalog', catalogRouter);
 apiV1Router.use('/jobs', jobsRouter);
+apiV1Router.use('/queue', queueRouter);
 
 // Explicit URL-based mounting
 app.use('/api/v1', apiV1Router);
@@ -131,6 +135,13 @@ if (jobsEnabled) {
   startJobs();
 }
 
+// Initialize message queue
+registerDefaultProcessors();
+const queueEnabled = process.env.QUEUE_ENABLED !== 'false';
+if (queueEnabled) {
+  messageQueue.start();
+}
+
 const server = app.listen(PORT, () => {
   console.log(`AgenticPay backend running on port ${PORT}`);
 });
@@ -150,6 +161,13 @@ const shutdown = (signal: string) => {
       }
     } catch (err) {
       console.error('Error stopping scheduler:', err);
+    }
+
+    try {
+      messageQueue.stop();
+      console.log('Message queue stopped.');
+    } catch (err) {
+      console.error('Error stopping message queue:', err);
     }
 
     console.log('Graceful shutdown complete. Exiting.');
